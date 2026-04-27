@@ -1,0 +1,17 @@
+# Environment
+venv/
+.env
+__pycache__/
+*.pyc
+
+# Uploaded files (don't push to GitHub)
+uploads/
+output/images/
+
+# API keys (never push this)
+secrets.toml
+.streamlit/secrets.toml
+
+# OS files
+.DS_Store
+Thumbs.db
