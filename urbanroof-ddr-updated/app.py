@@ -235,7 +235,6 @@ st.markdown('<div class="ur-section-title">Configure &amp; Generate</div>', unsa
 oc1, _ = st.columns([1, 2])
 with oc1:
     use_vision = st.toggle("🔬 Vision Mode — AI sees images", value=True)
-max_images = 8  # fixed, not shown to user
 
 _, bc, _ = st.columns([1, 2, 1])
 with bc:
@@ -285,10 +284,12 @@ if generate_btn:
                 if key_index > 0:
                     detail_text.caption(f"Switching to backup AI key {key_index + 1}...")
                 if use_vision and extracted["all_images"]:
-                    detail_text.caption(f"Vision Mode — analyzing {min(max_images, len(extracted['all_images']))} images + all text...")
+                    detail_text.caption(f"Vision Mode — analyzing {len(extracted['inspection_images'])} inspection + {len(extracted['thermal_images'])} thermal images...")
                     ddr_report = generate_ddr_with_vision(
                         extracted["inspection_text"], extracted["thermal_text"],
-                        extracted["all_images"][:max_images], api_key
+                        extracted["inspection_images"],
+                        extracted["thermal_images"],
+                        api_key
                     )
                 else:
                     ddr_report = generate_ddr_text_only(

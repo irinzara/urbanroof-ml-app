@@ -28,10 +28,12 @@ def extract_text_from_pdf(pdf_path: str) -> str:
 
 
 def extract_images_from_pdf(pdf_path: str, output_folder: str,
-                             prefix: str = "img", max_images: int = 10) -> list:
+                             prefix: str = "img", max_images: int = 20) -> list:
     """
-    Extract up to max_images representative images from a PDF.
-    Picks one best image per page rather than dumping everything.
+    Extract up to max_images meaningful images from a PDF.
+    Captures ALL qualifying images per page (not just the largest),
+    so IR overlay + regular photo pairs are both preserved.
+    Images are sorted by page then by size (largest first) within each page.
     """
     os.makedirs(output_folder, exist_ok=True)
     doc = fitz.open(pdf_path)
@@ -45,9 +47,8 @@ def extract_images_from_pdf(pdf_path: str, output_folder: str,
         page = doc[page_num]
         image_list = page.get_images(full=True)
 
-        # Pick the largest image on this page (most likely the real photo)
-        best = None
-        best_size = 0
+        # Collect ALL qualifying images on this page, sorted largest-first
+        page_candidates = []
         for img in image_list:
             xref = img[0]
             if xref in seen_xrefs:
@@ -55,19 +56,20 @@ def extract_images_from_pdf(pdf_path: str, output_folder: str,
             try:
                 base_image = doc.extract_image(xref)
                 size = len(base_image["image"])
-                if size < 8000:   # skip tiny icons
+                if size < 8000:   # skip tiny icons / logos
                     continue
-                if size > best_size:
-                    best_size = size
-                    best = (xref, base_image)
+                page_candidates.append((size, xref, base_image))
             except Exception:
                 continue
 
-        if best:
-            xref, base_image = best
+        page_candidates.sort(key=lambda x: x[0], reverse=True)
+
+        for idx, (size, xref, base_image) in enumerate(page_candidates):
+            if len(image_paths) >= max_images:
+                break
             seen_xrefs.add(xref)
             ext = base_image["ext"]
-            img_filename = f"{prefix}_page{page_num + 1}.{ext}"
+            img_filename = f"{prefix}_page{page_num + 1}_{idx + 1}.{ext}"
             img_path = os.path.join(output_folder, img_filename)
             with open(img_path, "wb") as f:
                 f.write(base_image["image"])
@@ -89,14 +91,14 @@ def extract_all(inspection_pdf: str, thermal_pdf: str,
     print("🌡️ Extracting text from Thermal Report...")
     thermal_text = extract_text_from_pdf(thermal_pdf)
 
-    print("📸 Extracting images from Inspection Report (max 8)...")
+    print("📸 Extracting images from Inspection Report (max 15)...")
     inspection_images = extract_images_from_pdf(
-        inspection_pdf, image_output_folder, prefix="inspection", max_images=8
+        inspection_pdf, image_output_folder, prefix="inspection", max_images=15
     )
 
-    print("🔥 Extracting images from Thermal Report (max 8)...")
+    print("🔥 Extracting images from Thermal Report (max 20)...")
     thermal_images = extract_images_from_pdf(
-        thermal_pdf, image_output_folder, prefix="thermal", max_images=8
+        thermal_pdf, image_output_folder, prefix="thermal", max_images=20
     )
 
     print(f"✅ Done! {len(inspection_images)} inspection + {len(thermal_images)} thermal images")

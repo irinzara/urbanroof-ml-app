@@ -214,7 +214,20 @@ with its corresponding source (positive/exposed side) that caused it.]
 
 ---
 
-### 4.4 Severity Assessment
+### 4.4 Thermal References
+
+[This section MUST be populated when Vision Mode is used. For every area where thermal
+images were provided, create one row pairing the damage location with the IR camera finding.
+If no thermal images were provided, write "Thermal imaging data not available for this report."]
+
+| Area | IR Camera Reading | Cool Zone / Hot Spot | Moisture Confirmed? | Camera Model |
+|------|-------------------|---------------------|---------------------|--------------|
+| [e.g., Hall Ceiling] | [e.g., 24.0°C – 25.8°C range] | [e.g., Cool zone at ~800mm from east wall] | Yes / No / Partial | [e.g., Bosch GTC 400 C] |
+| [Continue for all thermally imaged areas] | | | | |
+
+---
+
+### 4.5 Severity Assessment
 
 | Area | Issue Found | Severity | Action Required By |
 |------|-------------|----------|--------------------|
@@ -226,7 +239,7 @@ with its corresponding source (positive/exposed side) that caused it.]
 
 ---
 
-### 4.5 Further Possibilities if Action is Delayed
+### 4.6 Further Possibilities if Action is Delayed
 
 [2-3 sentences warning the client what will happen if repairs are not done promptly.
 E.g., structural damage, increased repair cost, health hazards from mould, etc.]
@@ -279,26 +292,66 @@ def generate_ddr_text_only(inspection_text: str, thermal_text: str, api_key: str
 
 
 def generate_ddr_with_vision(inspection_text: str, thermal_text: str,
-                              image_paths: list, api_key: str) -> str:
-    """Generate DDR using text + actual images (Vision mode)."""
+                              inspection_image_paths: list,
+                              thermal_image_paths: list,
+                              api_key: str) -> str:
+    """
+    Generate DDR using text + actual images (Vision mode).
+    Inspection images and thermal images are sent separately with clear labels,
+    so the model can extract temperature readings and correlate them to rooms.
+    """
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel('gemini-2.5-flash')
 
     content_parts = []
+
+    # ── THERMAL IMAGES FIRST — with explicit extraction instruction ──────────
+    thermal_added = 0
+    if thermal_image_paths:
+        content_parts.append(
+            "=== THERMAL CAMERA IMAGES ===\n"
+            "The following images are IR thermography photos from the site inspection. "
+            "For EACH image, carefully extract:\n"
+            "1. Any visible temperature values (°C) shown on screen\n"
+            "2. The room or area label if visible\n"
+            "3. Whether cool (blue/purple) zones indicate moisture\n"
+            "4. The camera model if visible (e.g., Bosch GTC 400 C)\n"
+            "Use this data to fill in the 'Thermal reading' and 'Thermal confirms issue?' "
+            "fields in Section 3.2, and to write Section 4.4 Thermal References.\n"
+        )
+        for img_path in thermal_image_paths[:15]:
+            try:
+                img = PIL.Image.open(img_path)
+                content_parts.append(f"[Thermal Image: {os.path.basename(img_path)}]")
+                content_parts.append(img)
+                thermal_added += 1
+            except Exception as e:
+                print(f"Could not load thermal image {img_path}: {e}")
+                continue
+
+    # ── INSPECTION IMAGES ───────────────────────────────────────────────────
+    inspection_added = 0
+    if inspection_image_paths:
+        content_parts.append(
+            "\n=== SITE INSPECTION PHOTOS ===\n"
+            "The following images are from the visual site inspection. "
+            "Use them to confirm damage descriptions (dampness, staining, "
+            "paint spalling, cracks, tile condition) for each area.\n"
+        )
+        for img_path in inspection_image_paths[:10]:
+            try:
+                img = PIL.Image.open(img_path)
+                content_parts.append(f"[Inspection Photo: {os.path.basename(img_path)}]")
+                content_parts.append(img)
+                inspection_added += 1
+            except Exception as e:
+                print(f"Could not load inspection image {img_path}: {e}")
+                continue
+
+    # ── MAIN PROMPT (text data + format instructions) ───────────────────────
     content_parts.append(build_prompt(inspection_text, thermal_text))
 
-    images_added = 0
-    for img_path in image_paths[:10]:
-        try:
-            img = PIL.Image.open(img_path)
-            content_parts.append(f"\n[Image: {os.path.basename(img_path)}]")
-            content_parts.append(img)
-            images_added += 1
-        except Exception as e:
-            print(f"Could not load image {img_path}: {e}")
-            continue
-
-    print(f"🤖 Sending text + {images_added} images to AI Vision...")
+    print(f"🤖 Sending text + {inspection_added} inspection + {thermal_added} thermal images to AI Vision...")
     response = model.generate_content(content_parts)
     return response.text
 
